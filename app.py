@@ -32,8 +32,29 @@ except Exception as e:
     AI_ENABLED = False
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here-change-in-production'  # Required for session management
-CORS(app, supports_credentials=True)  # Enable credentials for session cookies
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here-change-in-production')
+
+# CORS Configuration for Azure
+# Get frontend URL from environment variable
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
+ALLOWED_ORIGINS = [
+    'https://nice-plant-017975e1e.3.azurestaticapps.net',
+    FRONTEND_URL,  # Azure Static Web App (production)
+    'http://localhost:3000',  # Local React development
+    'http://localhost:5000',  # Local Flask testing
+    'http://127.0.0.1:3000',  # Alternative localhost
+    'http://127.0.0.1:5000',  # Alternative localhost
+]
+
+# Configure CORS with specific settings for Azure
+CORS(app, 
+     origins=ALLOWED_ORIGINS,
+     supports_credentials=True,
+     allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     expose_headers=['Content-Type', 'Authorization'])
+
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -2020,10 +2041,12 @@ def get_all_users():
     conn = get_db_connection()
     
     try:
-        users = conn.execute(
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
             '''SELECT id, username, full_name, email, phone, is_active, is_admin, created_at 
                FROM users ORDER BY created_at DESC'''
-        ).fetchall()
+        )
+        users = cursor.fetchall()
         
         users_list = []
         for user in users:
@@ -2038,6 +2061,7 @@ def get_all_users():
                 'created_at': user['created_at']
             })
         
+        cursor.close()
         conn.close()
         return jsonify({'success': True, 'users': users_list})
         
@@ -2051,24 +2075,29 @@ def toggle_user_active(user_id):
     conn = get_db_connection()
     
     try:
+        cursor = conn.cursor(dictionary=True)
+        
         # Get current status
-        user = conn.execute(
-            'SELECT id, username, is_active FROM users WHERE id = ?',
+        cursor.execute(
+            'SELECT id, username, is_active FROM users WHERE id = %s',
             (user_id,)
-        ).fetchone()
+        )
+        user = cursor.fetchone()
         
         if not user:
+            cursor.close()
             conn.close()
             return jsonify({'error': 'User not found'}), 404
         
         # Toggle status
         new_status = 0 if user['is_active'] else 1
         
-        conn.execute(
-            'UPDATE users SET is_active = ? WHERE id = ?',
+        cursor.execute(
+            'UPDATE users SET is_active = %s WHERE id = %s',
             (new_status, user_id)
         )
         conn.commit()
+        cursor.close()
         conn.close()
         
         status_text = "activated" if new_status else "deactivated"
@@ -2090,24 +2119,30 @@ def delete_user(user_id):
     conn = get_db_connection()
     
     try:
+        cursor = conn.cursor(dictionary=True)
+        
         # Check if user exists
-        user = conn.execute(
-            'SELECT id, username, is_admin FROM users WHERE id = ?',
+        cursor.execute(
+            'SELECT id, username, is_admin FROM users WHERE id = %s',
             (user_id,)
-        ).fetchone()
+        )
+        user = cursor.fetchone()
         
         if not user:
+            cursor.close()
             conn.close()
             return jsonify({'error': 'User not found'}), 404
         
         # Prevent deleting admin accounts
         if user['is_admin']:
+            cursor.close()
             conn.close()
             return jsonify({'error': 'Cannot delete admin accounts'}), 403
         
         # Delete user
-        conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
         conn.commit()
+        cursor.close()
         conn.close()
         
         print(f"🗑️ Admin deleted user: {user['username']}")
@@ -2127,8 +2162,10 @@ def get_usage_analytics():
     conn = get_db_connection()
     
     try:
+        cursor = conn.cursor(dictionary=True)
+        
         # Get questions solved by each user from question_bank
-        questions_by_user = conn.execute('''
+        cursor.execute('''
             SELECT 
                 u.id as user_id,
                 u.username,
@@ -2144,10 +2181,11 @@ def get_usage_analytics():
             LEFT JOIN question_bank qb ON u.id = qb.user_id
             GROUP BY u.id, u.username, u.full_name
             ORDER BY questions_solved DESC
-        ''').fetchall()
+        ''')
+        questions_by_user = cursor.fetchall()
         
         # Get token usage by user from usage_logs (if any logs exist)
-        token_usage = conn.execute('''
+        cursor.execute('''
             SELECT 
                 u.id as user_id,
                 u.username,
@@ -2160,16 +2198,18 @@ def get_usage_analytics():
             GROUP BY u.id, u.username, u.full_name, ul.model_name
             HAVING total_tokens > 0
             ORDER BY total_tokens DESC
-        ''').fetchall()
+        ''')
+        token_usage = cursor.fetchall()
         
         # Get overall statistics
-        overall_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
                 COUNT(DISTINCT user_id) as active_users,
                 COUNT(*) as total_questions_solved,
                 COUNT(DISTINCT subject) as total_subjects
             FROM question_bank
-        ''').fetchone()
+        ''')
+        overall_stats = cursor.fetchone()
         
         # Format user analytics
         user_analytics = []
@@ -2199,6 +2239,7 @@ def get_usage_analytics():
                 'model_name': row['model_name'] or 'N/A'
             })
         
+        cursor.close()
         conn.close()
         
         return jsonify({
