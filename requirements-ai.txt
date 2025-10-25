@@ -1,0 +1,27 @@
+# AI Features Dependencies
+# Install with: pip install -r requirements-ai.txt
+# Compatible with Python 3.8+
+
+# Core dependencies
+PyMuPDF==1.23.8
+python-dotenv==1.0.0
+
+# OCR for scanned/image PDFs
+pytesseract>=0.3.10
+Pillow>=9.0.0
+pdf2image>=1.16.0
+
+# Advanced OCR for mathematical symbols (optional but recommended)
+# paddleocr>=2.7.0
+# paddlepaddle>=2.5.0  # CPU version
+
+# AI/ML dependencies
+sentence-transformers>=2.2.2
+numpy>=1.21.0
+
+# Vector database - FAISS (simple, fast, no compatibility issues)
+faiss-cpu>=1.7.0
+
+# LLM API - Groq (free tier available, much faster than OpenAI)
+# Get API key at: https://console.groq.com
+requests>=2.28.0
